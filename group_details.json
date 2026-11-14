@@ -1,0 +1,25 @@
+{
+  "subject": "Utilization of Electrical Energy (UEE)",
+  "marks": 10,
+  "project_type": "Software",
+  "topic": "F1 MGU-K Regenerative Braking Energy Simulator",
+  "short_title": "F1 MGU-K Regenerative Braking Energy Simulator",
+  "institute": "Punjab Engineering College (Deemed to be University), Chandigarh",
+  "department": "Department of Electrical Engineering",
+  "programme": "B.E. Electrical Engineering",
+  "semester": "To be filled by the group",
+  "academic_year": "2025-26",
+  "submission_deadline_note": "After Diwali break (confirm exact date with UEE faculty)",
+  "inferred_fields": [
+    "Institute / department / programme follow the PEC Chandigarh EE convention used in peer group posts; confirm before printing.",
+    "Semester is left blank for the group to fill."
+  ],
+  "members": [
+    {"role": "Member 1", "name": "Babbalpreet Singh", "sid": "23104092", "status": "confirmed"},
+    {"role": "Member 2", "name": "Anmoldeep Singh", "sid": "23104111", "status": "confirmed"},
+    {"role": "Member 3", "name": "Priyanshu", "sid": "23104112", "status": "confirmed"},
+    {"role": "Member 4", "name": "Deepanshu", "sid": "23104069", "status": "confirmed"},
+    {"role": "Member 5", "name": "Sarthak", "sid": "23104115", "status": "confirmed"}
+  ],
+  "whatsapp_line": "3. Babbalpreet Singh 23104092  Anmoldeep Singh 23104111  Priyanshu 23104112  Deepanshu 23104069  Sarthak 23104115\nTopic: F1 MGU-K Regenerative Braking Energy Simulator"
+}
