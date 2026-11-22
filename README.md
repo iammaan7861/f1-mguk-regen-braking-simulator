@@ -33,6 +33,20 @@ pip install -r requirements.txt
 Run_Simulator_Dashboard.bat
 ```
 
+Opens http://localhost:8501 — one polished dashboard with interactive tabs:
+
+| Tab | What to show in viva |
+|-----|----------------------|
+| Telemetry | Speed / MGU-K power / SOC vs ICE-only |
+| Track map | Colour by speed, mode, regen or deploy |
+| Energy flow | Sankey — every joule from fuel to brakes |
+| Strategy | Live strategy comparison + super-clip sweep |
+| Utilisation | Race-scale kWh, SEC, MGU-K power sweep |
+| A/B compare | Save two setups and overlay speed/SOC |
+| Theory | UEE ↔ F1 mapping + 60 s demo path |
+
+Sidebar **presets**: Monza 2026 race · Street 2026 race · Quali full→empty · Super-clip @300.
+
 Optional full rebuild (analysis + screenshots + tests + report + PPT):
 
 ```bat
@@ -44,6 +58,8 @@ Report/PPT only (uses existing `outputs/`):
 ```bat
 Rebuild_Report_and_PPT.bat
 ```
+
+**GitHub:** https://github.com/iammaan7861/f1-mguk-regen-braking-simulator
 
 ## Suggested task split
 
@@ -60,7 +76,7 @@ Rebuild_Report_and_PPT.bat
 1. Fill semester on the cover page (`group_details.json` → rebuild).
 2. Dry-run the dashboard together once; each member can explain one tab.
 3. Print / submit `Project_Report.pdf`; keep DOCX for edits.
-4. Viva: open dashboard → Telemetry → Energy flow → Braking zones → Theory.
+4. Viva: presets → Telemetry → Energy flow → Strategy → Utilisation → Theory.
 
 ## Syllabus mapping (UEE ↔ F1)
 

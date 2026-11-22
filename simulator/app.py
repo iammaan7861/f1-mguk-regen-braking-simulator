@@ -17,14 +17,19 @@ from plotly.subplots import make_subplots
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from dash_cache import (get_track, run_eras, run_ice_only, run_lap, run_power_sweep,  # noqa: E402
+                        run_stint, run_strategy_comparison, run_superclip_sweep, snapshot_lap,
+                        utilisation_from_summary)
 from f1_regen import (CAR_2025, CAR_2026, PU_PRESETS, TRACKS, PowerUnit, Strategy,  # noqa: E402
-                      Vehicle, simulate_lap, simulate_stint)
+                      )
 from f1_regen import analysis as an  # noqa: E402
 from f1_regen.plots import corner_groups  # noqa: E402
 from f1_regen.simulation import MODE_BRAKE, MODE_FULL, MODE_PART  # noqa: E402
-from f1_regen.strategy import qualifying_strategy, race_strategy  # noqa: E402
+from ui_theme import inject_css, render_banner, style_fig  # noqa: E402
 
-st.set_page_config(page_title="F1 ERS Regenerative Braking Simulator", page_icon="\u26a1", layout="wide")
+st.set_page_config(page_title="F1 MGU-K Regenerative Braking Energy Simulator",
+                   page_icon="\u26a1", layout="wide", initial_sidebar_state="expanded")
+inject_css()
 
 C = {"ice": "#6c757d", "deploy": "#7b2cbf", "regen": "#2ca02c", "friction": "#ff7f0e", "clip": "#17a2b8",
      "soc": "#d62728", "brake": "#343a40", "part": "#f2c14e"}
@@ -38,60 +43,50 @@ MODE_HELP = {
     "uniform": ("Fraction of maximum power", 0.0, 1.0, 0.1, 0.01),
     "greedy": ("Energy budget per lap (MJ)", 0.0, 12.0, 2.0, 0.1),
 }
+TRACK_KEYS = list(TRACKS.keys())
+PRESETS = {
+    "Monza 2026 race": {
+        "ui_track": TRACK_KEYS[0], "ui_era": "2026", "ui_session": "race",
+        "ui_mode": "low_speed", "ui_soc": 50, "ui_superclip": False, "ui_clip_v": 300, "ui_regen": True,
+    },
+    "Street 2026 race": {
+        "ui_track": TRACK_KEYS[1] if len(TRACK_KEYS) > 1 else TRACK_KEYS[0], "ui_era": "2026",
+        "ui_session": "race", "ui_mode": "low_speed", "ui_soc": 50, "ui_superclip": False,
+        "ui_clip_v": 300, "ui_regen": True,
+    },
+    "Quali full\u2192empty": {
+        "ui_track": TRACK_KEYS[0], "ui_era": "2026", "ui_session": "quali",
+        "ui_mode": "low_speed", "ui_soc": 100, "ui_superclip": False, "ui_clip_v": 300, "ui_regen": True,
+    },
+    "Super-clip @300": {
+        "ui_track": TRACK_KEYS[0], "ui_era": "2026", "ui_session": "race",
+        "ui_mode": "low_speed", "ui_soc": 50, "ui_superclip": True, "ui_clip_v": 300, "ui_regen": True,
+    },
+}
 
-
-# ----------------------------------------------------------------------------------------
-# Cached model calls (arguments are plain dicts so Streamlit can hash them)
-# ----------------------------------------------------------------------------------------
-@st.cache_resource
-def get_track(name: str):
-    return TRACKS[name]()
-
-
-@st.cache_data(show_spinner="Simulating lap ...", max_entries=64)
-def run_lap(track_name: str, veh_d: dict, pu_d: dict, strat_d: dict, session: str):
-    tr = get_track(track_name)
-    veh, pu, st_ = Vehicle(**veh_d), PowerUnit(**pu_d), Strategy(**strat_d)
-    if pu.ers_enabled and session == "race" and st_.deploy_mode != "none":
-        st_ = race_strategy(tr, veh, pu, mode=st_.deploy_mode, soc=st_.soc_start,
-                            superclip=st_.superclip, superclip_speed_kph=st_.superclip_speed_kph,
-                            name=st_.name, regen=st_.regen)
-    elif pu.ers_enabled and session == "quali" and st_.deploy_mode != "none":
-        st_ = qualifying_strategy(tr, veh, pu, mode=st_.deploy_mode, superclip=st_.superclip,
-                                  superclip_speed_kph=st_.superclip_speed_kph, name=st_.name,
-                                  regen=st_.regen)
-    return simulate_lap(tr, veh, pu, st_)
-
-
-@st.cache_data(show_spinner="Simulating reference lap (ICE only) ...", max_entries=16)
-def run_ice_only(track_name: str, veh_d: dict, pu_d: dict):
-    pu = PowerUnit(**pu_d)
-    return simulate_lap(get_track(track_name), Vehicle(**veh_d), pu.ice_only(),
-                        Strategy(name="ICE only", deploy_mode="none"))
-
-
-@st.cache_data(show_spinner="Running all regulation eras (about 10 s) ...", max_entries=4)
-def run_eras(track_name: str):
-    scen = an.era_scenarios(get_track(track_name))
-    return {k: v.summary for k, v in scen.items()}
-
-
-@st.cache_data(show_spinner="Simulating stint ...", max_entries=16)
-def run_stint(track_name: str, veh_d: dict, pu_d: dict, strat_d: dict, n_laps: int):
-    laps = simulate_stint(get_track(track_name), Vehicle(**veh_d), PowerUnit(**pu_d), Strategy(**strat_d),
-                          n_laps)
-    return [{"lap": k + 1, "lap_time_s": lp.lap_time, "soc_end_pct": 100 * lp.soc[-1],
-             "deploy_MJ": lp.summary["deploy_MJ"], "harvest_MJ": lp.summary["harvest_MJ"],
-             "regen_MJ": lp.summary["regen_MJ"]} for k, lp in enumerate(laps)]
+# Defaults for keyed widgets (must exist before first widget render)
+for k, v in {"ui_track": TRACK_KEYS[0], "ui_era": "2026", "ui_session": "race", "ui_mode": "low_speed",
+             "ui_soc": 50, "ui_superclip": False, "ui_clip_v": 300, "ui_regen": True,
+             "ui_n_laps": 8, "ui_race_laps": 53}.items():
+    st.session_state.setdefault(k, v)
 
 
 # ----------------------------------------------------------------------------------------
 # Sidebar
 # ----------------------------------------------------------------------------------------
 sb = st.sidebar
-sb.title("\u2699\ufe0f Set-up")
-track_name = sb.selectbox("Circuit", list(TRACKS.keys()))
-era = sb.selectbox("Power unit / regulations", list(ERA_LABELS.keys()), format_func=ERA_LABELS.get)
+sb.title("Set-up")
+sb.caption("One-click presets")
+pc = sb.columns(2)
+preset_names = list(PRESETS)
+for i, name in enumerate(preset_names):
+    if pc[i % 2].button(name, use_container_width=True, key=f"preset_btn_{i}"):
+        st.session_state.update(PRESETS[name])
+        st.rerun()
+
+track_name = sb.selectbox("Circuit", TRACK_KEYS, key="ui_track")
+era = sb.selectbox("Power unit / regulations", list(ERA_LABELS.keys()), format_func=ERA_LABELS.get,
+                   key="ui_era")
 
 if era == "Custom":
     base = PU_PRESETS["2026"]
@@ -116,26 +111,26 @@ else:
 tr0 = get_track(track_name)
 car = car.with_trim(tr0.aero_trim)
 
-session = sb.radio("Session", list(SESSION_LABELS.keys()), format_func=SESSION_LABELS.get)
+session = sb.radio("Session", list(SESSION_LABELS.keys()), format_func=SESSION_LABELS.get, key="ui_session")
 mode = sb.selectbox("Deployment strategy", list(an.MODE_LABELS.keys()) + ["none"],
-                    format_func=lambda m: an.MODE_LABELS.get(m, "No deployment"))
+                    format_func=lambda m: an.MODE_LABELS.get(m, "No deployment"), key="ui_mode")
 param = 0.0
-soc_start = 0.5
 if mode in MODE_HELP:
     lab, lo, hi, default, step = MODE_HELP[mode]
     if session == "manual":
-        param = sb.slider(lab, lo, hi, default, step)
+        param = sb.slider(lab, lo, hi, float(st.session_state.get("ui_param", default)), step, key="ui_param")
     else:
         sb.caption(f"{lab}: tuned automatically to "
                    + ("finish the lap at the starting SOC." if session == "race"
                       else "start full and finish empty."))
+soc_start = st.session_state.ui_soc / 100.0
 if session != "quali":
-    soc_start = sb.slider("State of charge at the start of the lap (%)", 0, 100, 50, 5) / 100
-superclip = sb.checkbox("Super-clipping (harvest at full throttle)", value=False,
+    soc_start = sb.slider("State of charge at the start of the lap (%)", 0, 100, key="ui_soc") / 100
+superclip = sb.checkbox("Super-clipping (harvest at full throttle)", key="ui_superclip",
                         help="Above the threshold speed the MGU-K absorbs the surplus ICE power "
                              "(up to its rating) and the car holds speed.")
-clip_v = sb.slider("Super-clipping threshold (km/h)", 250, 345, 300, 5, disabled=not superclip)
-regen_on = sb.checkbox("Regenerative braking enabled", value=True)
+clip_v = sb.slider("Super-clipping threshold (km/h)", 250, 345, key="ui_clip_v", disabled=not superclip)
+regen_on = sb.checkbox("Regenerative braking enabled", key="ui_regen")
 
 with sb.expander("Car parameters"):
     mass = st.slider("Car mass with driver (kg)", 700, 900, int(car.mass_kg), 5)
@@ -144,7 +139,7 @@ with sb.expander("Car parameters"):
     cda = st.slider("Drag area CdA (m\u00b2)", 0.8, 1.8, float(car.cda_m2), 0.01)
     cla = st.slider("Downforce area ClA (m\u00b2)", 2.5, 7.0, float(car.cla_m2), 0.05)
     grip = st.slider("Tyre grip scale", 0.85, 1.15, 1.0, 0.01)
-n_laps = sb.slider("Laps in stint (Stint tab)", 2, 20, 8)
+n_laps = sb.slider("Laps in stint (Stint tab)", 2, 20, key="ui_n_laps")
 
 veh = replace(car, mass_kg=float(mass), rear_brake_share=float(bshare), cda_m2=float(cda),
               cla_m2=float(cla), mu_lat=car.mu_lat * grip, mu_long=car.mu_long * grip)
@@ -161,9 +156,19 @@ S = lap.summary
 # ----------------------------------------------------------------------------------------
 # Header and KPIs
 # ----------------------------------------------------------------------------------------
-st.title("\u26a1 Formula 1 ERS Regenerative Braking Simulator")
-st.caption(f"{tr.name} \u00b7 {lap.pu.name} \u00b7 {lap.vehicle.name} \u00b7 strategy: {lap.strategy.name}"
-           + (f" (parameter {lap.strategy.deploy_param:.2f})" if mode in MODE_HELP else ""))
+render_banner(
+    f"{tr.name} · {lap.pu.name} · strategy: {lap.strategy.name}"
+    + (f" (param {lap.strategy.deploy_param:.2f})" if mode in MODE_HELP else "")
+)
+
+ab1, ab2, ab3 = st.columns([1, 1, 2])
+if ab1.button("Save as compare A", use_container_width=True):
+    st.session_state["cmp_a"] = snapshot_lap(lap, track_name, session, "A")
+    st.toast("Saved configuration A")
+if ab2.button("Save as compare B", use_container_width=True):
+    st.session_state["cmp_b"] = snapshot_lap(lap, track_name, session, "B")
+    st.toast("Saved configuration B")
+ab3.caption("Open the **A/B compare** tab after saving two setups.")
 
 k = st.columns(7)
 k[0].metric("Lap time", f"{S['lap_time_s']:.3f} s", f"{S['lap_time_s'] - ref.lap_time:+.3f} s vs ICE only",
@@ -177,9 +182,9 @@ k[5].metric("SOC start \u2192 end", f"{S['soc_start_pct']:.0f} \u2192 {S['soc_en
 k[6].metric("Fuel per lap", f"{S['fuel_kg']:.3f} kg", f"{S['fuel_kg'] - ref.summary['fuel_kg']:+.3f} kg",
             delta_color="inverse")
 
-TAB_NAMES = ["Telemetry", "Track map", "Energy flow", "Braking zones", "Battery", "Compare eras", "Stint",
-             "Theory"]
-start_tab = st.query_params.get("tab")  # e.g. http://localhost:8501/?tab=Energy%20flow
+TAB_NAMES = ["Telemetry", "Track map", "Energy flow", "Braking zones", "Battery", "Strategy",
+             "Utilisation", "Compare eras", "A/B compare", "Stint", "Theory"]
+start_tab = st.query_params.get("tab")
 tabs = st.tabs(TAB_NAMES, default=start_tab if start_tab in TAB_NAMES else None)
 x_km = tr.s / 1000
 xm_km = tr.s_mid / 1000
@@ -211,9 +216,7 @@ with tabs[0]:
     fig.update_yaxes(title_text="kW (+ out / \u2212 in)", row=2, col=1)
     fig.update_yaxes(title_text="%", range=[-3, 103], row=3, col=1)
     fig.update_xaxes(title_text="Distance from the start/finish line (km)", row=3, col=1)
-    fig.update_layout(height=760, hovermode="x unified", legend=dict(orientation="h", y=1.07),
-                      margin=dict(t=60, b=40))
-    st.plotly_chart(fig)
+    st.plotly_chart(style_fig(fig, 760))
     tel = pd.DataFrame({"s_m": tr.s_mid, "speed_kph": 0.5 * (lap.v[:-1] + lap.v[1:]) * 3.6,
                         "deploy_kW": lap.p_deploy / 1e3, "regen_kW": lap.p_regen / 1e3,
                         "clip_kW": lap.p_clip / 1e3, "friction_kW": lap.p_friction / 1e3,
@@ -226,6 +229,12 @@ with tabs[0]:
 with tabs[1]:
     what = st.radio("Colour the circuit by", ["Speed", "Operating mode", "Regeneration power", "Deployment power"],
                     horizontal=True)
+    highlight = st.session_state.get("highlight_corner")
+    if highlight:
+        st.info(f"Highlighting braking zone: **{highlight}** (set from the Braking zones tab).")
+        if st.button("Clear highlight"):
+            st.session_state.pop("highlight_corner", None)
+            st.rerun()
     xs, ys = tr.x[1:], tr.y[1:]
     if what == "Speed":
         col, cs, title = 0.5 * (lap.v[:-1] + lap.v[1:]) * 3.6, "Turbo", "km/h"
@@ -259,22 +268,23 @@ with tabs[1]:
         ux, uy = cx - mx, cy - my
         d = float(np.hypot(ux, uy)) or 1.0
         ux, uy = ux / d, uy / d
-        fig.add_annotation(x=cx, y=cy, text=label, showarrow=True, arrowhead=0, arrowcolor="#b22222",
-                           ax=38 * ux, ay=-38 * uy, font=dict(size=12, color="#b22222"),
+        emph = highlight and highlight in label
+        fig.add_annotation(x=cx, y=cy, text=label, showarrow=True, arrowhead=0,
+                           arrowcolor="#d62728" if emph else "#b22222",
+                           ax=38 * ux, ay=-38 * uy,
+                           font=dict(size=14 if emph else 12, color="#d62728" if emph else "#b22222",
+                                     family="Arial Black" if emph else None),
                            xanchor="left" if ux > 0.35 else ("right" if ux < -0.35 else "center"),
                            yanchor="bottom" if uy > 0.35 else ("top" if uy < -0.35 else "middle"))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False, scaleanchor="x", scaleratio=1)
-    fig.update_layout(height=650, margin=dict(t=20, b=20), legend=dict(orientation="h"))
-    st.plotly_chart(fig)
+    st.plotly_chart(style_fig(fig, 650))
 
 # ---------------- Energy flow ----------------
 with tabs[2]:
     f = an.energy_flow(lap)
     eta_e = lap.pu.electrical_chain_efficiency
     clip_mech = (f["clip_dc"] + f["pt_dc"]) / eta_e if eta_e else 0.0
-    # The store appears twice (discharge on the left, charge on the right) so the diagram has no cycle;
-    # charge minus discharge is the change in stored energy. I²R losses are booked on the discharge side.
     node_colours = {
         "Fuel": "#495057", "Energy store (discharge)": "#2b8a3e", "ICE crankshaft": "#adb5bd",
         "MGU-K as motor": C["deploy"], "Drivetrain": "#868e96", "Wheels (tractive work)": "#343a40",
@@ -317,8 +327,7 @@ with tabs[2]:
                   customdata=[f"{v:.2f} MJ" for _, _, v in links],
                   hovertemplate="%{source.label} \u2192 %{target.label}: %{customdata}<extra></extra>"),
         textfont=dict(size=14, color="#212529")))
-    fig.update_layout(height=600, margin=dict(t=20, b=20, l=10, r=10))
-    st.plotly_chart(fig)
+    st.plotly_chart(style_fig(fig, 600))
     bal = pd.DataFrame([
         ("Fuel chemical energy", f["fuel"]), ("ICE heat (exhaust, coolant)", f["ice_heat"]),
         ("Aerodynamic drag", f["drag"]), ("Rolling resistance", f["rolling"]),
@@ -329,11 +338,9 @@ with tabs[2]:
     c1, c2 = st.columns([1.2, 1])
     c1.dataframe(bal.style.format({"MJ": "{:.3f}"}), hide_index=True)
     c2.info(f"Energy balance error: {S['balance_error_J']:.2e} J "
-            f"({S['balance_error_pct']:.1e} % of the fuel energy). Every joule of fuel is accounted for "
-            f"as heat, drag, rolling, brake heat or a change in stored energy.\n\n"
+            f"({S['balance_error_pct']:.1e} % of the fuel energy).\n\n"
             f"Specific energy consumption: **{S['sec_wh_per_tkm']:.0f} Wh/t-km** "
-            f"({S['net_sec_wh_per_tkm']:.0f} Wh/t-km net of regenerated energy); "
-            f"a suburban EMU train uses roughly 50\u201375 Wh/t-km.")
+            f"({S['net_sec_wh_per_tkm']:.0f} Wh/t-km net); suburban EMU ≈ 50–75 Wh/t-km.")
 
 # ---------------- Braking zones ----------------
 with tabs[3]:
@@ -345,8 +352,12 @@ with tabs[3]:
                              marker_color="#adb5bd"))
         fig.add_trace(go.Bar(x=dfz["corner"], y=dfz["regen_MJ"], name="Recovered by MGU-K",
                              marker_color=C["regen"]))
-        fig.update_layout(barmode="group", height=380, yaxis_title="MJ", margin=dict(t=30))
-        st.plotly_chart(fig)
+        fig.update_layout(barmode="group", yaxis_title="MJ")
+        st.plotly_chart(style_fig(fig, 380))
+        pick = st.selectbox("Highlight a corner on the Track map", ["(none)"] + list(dfz["corner"]))
+        if pick != "(none)":
+            st.session_state["highlight_corner"] = pick
+            st.caption(f"Selected **{pick}** — open the Track map tab to see it emphasised.")
         show = dfz[["corner", "v_entry_kph", "v_exit_kph", "duration_s", "brake_energy_MJ", "regen_MJ",
                     "recovery_pct", "peak_brake_kW"]].rename(columns={
                         "corner": "Corner", "v_entry_kph": "Entry (km/h)", "v_exit_kph": "Exit (km/h)",
@@ -354,8 +365,7 @@ with tabs[3]:
                         "regen_MJ": "Recovered (MJ)", "recovery_pct": "Recovered (%)",
                         "peak_brake_kW": "Peak braking power (kW)"})
         st.dataframe(show.style.format(precision=2), hide_index=True)
-        st.caption("Peak braking power reaches about 3 MW, roughly ten times what even the 350 kW MGU-K can "
-                   "absorb, so most braking energy still becomes heat in the friction brakes.")
+        st.caption("Peak braking ≈ 3 MW ≫ 350 kW MGU-K — most energy still becomes friction heat.")
     else:
         st.info("No significant braking zones.")
 
@@ -373,19 +383,113 @@ with tabs[4]:
     for r, lab in enumerate(["A", "V", "kW", "%"], start=1):
         fig.update_yaxes(title_text=lab, row=r, col=1)
     fig.update_xaxes(title_text="Time (s)", row=4, col=1)
-    fig.update_layout(height=760, showlegend=False, margin=dict(t=40))
-    st.plotly_chart(fig)
+    st.plotly_chart(style_fig(fig, 760).update_layout(showlegend=False))
     c1, c2, c3 = st.columns(3)
     c1.metric("Peak current", f"{S['peak_batt_current_A']:.0f} A")
     c2.metric("Battery loss per lap", f"{S['battery_loss_MJ'] * 1000:.0f} kJ")
     c3.metric("Usable window", f"{lap.pu.es_window_mj:.1f} MJ "
               f"({lap.pu.battery_voc_min_v:.0f}\u2013{lap.pu.battery_voc_max_v:.0f} V)")
 
-# ---------------- Compare eras ----------------
+# ---------------- Strategy ----------------
 with tabs[5]:
-    st.write("Each regulation era on the selected circuit: ICE only, a charge-sustaining race lap and a "
-             "qualifying lap (energy store full at the start, empty at the line).")
-    if st.button("Run the comparison"):
+    st.write("Charge-sustaining strategies on the **current circuit and power unit** — same harvested "
+             "energy, different places to spend it.")
+    if st.button("Run strategy comparison", type="primary"):
+        st.session_state["strat_" + track_name + pu.name] = run_strategy_comparison(
+            track_name, pu_d, soc=0.5 if session == "quali" else float(soc_start))
+    rows = st.session_state.get("strat_" + track_name + pu.name)
+    if rows:
+        dfs = pd.DataFrame(rows)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=dfs["label"], y=dfs["lap_time_s"], name="Lap time",
+                             marker_color=["#d62728" if d == 0 else "#868e96" for d in dfs["delta_s"]],
+                             text=[f"+{d:.3f} s" if d > 0 else "best" for d in dfs["delta_s"]],
+                             textposition="outside"))
+        fig.update_yaxes(title_text="Lap time (s)",
+                         range=[dfs["lap_time_s"].min() - 0.3, dfs["lap_time_s"].max() + 0.5])
+        st.plotly_chart(style_fig(fig, 400))
+        st.dataframe(dfs[["label", "param", "lap_time_s", "delta_s", "deploy_MJ", "harvest_MJ",
+                          "top_speed_kph", "soc_end_pct"]].rename(columns={
+                              "label": "Strategy", "param": "Parameter", "lap_time_s": "Lap (s)",
+                              "delta_s": "\u0394 vs best (s)", "deploy_MJ": "Deploy (MJ)",
+                              "harvest_MJ": "Harvest (MJ)", "top_speed_kph": "Top speed",
+                              "soc_end_pct": "SOC end %"}).style.format(precision=3), hide_index=True)
+        st.caption("Low-speed priority is usually fastest: a joule spent from a slow corner beats a joule "
+                   "spent fighting drag at 300+ km/h.")
+    else:
+        st.info("Click **Run strategy comparison** (a few seconds).")
+
+    st.subheader("Super-clipping threshold sweep")
+    if st.button("Run super-clip sweep"):
+        st.session_state["clip_" + track_name] = run_superclip_sweep(
+            track_name, (285, 290, 295, 300, 305, 310, 315, 320, 330))
+    clip = st.session_state.get("clip_" + track_name)
+    if clip:
+        dfc = pd.DataFrame(clip["rows"])
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Lap time", "Clip harvest"))
+        fig.add_trace(go.Scatter(x=dfc["threshold_kph"], y=dfc["lap_time_s"], mode="lines+markers",
+                                 name="Lap"), 1, 1)
+        fig.add_trace(go.Scatter(x=dfc["threshold_kph"], y=dfc["clip_MJ"], mode="lines+markers",
+                                 name="Clip MJ", line=dict(color=C["clip"])), 1, 2)
+        fig.update_xaxes(title_text="Hold speed (km/h)")
+        fig.update_yaxes(title_text="s", row=1, col=1)
+        fig.update_yaxes(title_text="MJ", row=1, col=2)
+        st.plotly_chart(style_fig(fig, 380).update_layout(showlegend=False))
+        best = dfc.loc[dfc["lap_time_s"].idxmin()]
+        st.success(f"Fastest hold in this sweep: **{best['threshold_kph']:.0f} km/h** "
+                   f"({best['lap_time_s']:.3f} s, clip {best['clip_MJ']:.2f} MJ).")
+
+# ---------------- Utilisation ----------------
+with tabs[6]:
+    race_laps = st.slider("Race distance (laps)", 10, 70, key="ui_race_laps")
+    u = utilisation_from_summary(S, pu_d, int(race_laps))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Regen / race", f"{u['regen_kWh_per_race']:.2f} kWh")
+    m2.metric("Friction heat / race", f"{u['friction_kWh_per_race']:.1f} kWh")
+    m3.metric("Fuel-equivalent of deploy", f"{u['fuel_equiv_kg_per_race']:.2f} kg")
+    m4.metric("Household-days of regen", f"{u['household_days_per_race']:.1f} d",
+              help="Assuming 100 kWh/month household use")
+    st.write(
+        f"Gross SEC **{u['sec_wh_per_tkm']:.0f} Wh/t-km** "
+        f"(net **{u['net_sec_wh_per_tkm']:.0f}** after regen). "
+        f"Suburban EMU trains sit around 50–75 Wh/t-km — F1 is energy-intense because of aero drag "
+        f"and hard braking."
+    )
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="Recovered", x=["This lap", f"{race_laps}-lap race"],
+                         y=[u["regen_kWh_per_lap"], u["regen_kWh_per_race"]], marker_color=C["regen"]))
+    fig.add_trace(go.Bar(name="Friction heat", x=["This lap", f"{race_laps}-lap race"],
+                         y=[u["friction_MJ_per_lap"] / 3.6, u["friction_kWh_per_race"]],
+                         marker_color=C["friction"]))
+    fig.update_layout(barmode="group", yaxis_title="kWh")
+    st.plotly_chart(style_fig(fig, 360))
+
+    st.subheader("Recovery vs MGU-K rating")
+    if st.button("Run power sweep on this circuit"):
+        st.session_state["pwr_" + track_name] = run_power_sweep(
+            track_name, (60, 120, 180, 240, 300, 350, 400, 500, 600))
+    pwr = st.session_state.get("pwr_" + track_name)
+    if pwr:
+        dfp = pd.DataFrame(pwr)
+        fig = make_subplots(rows=1, cols=2, subplot_titles=("Energy recovered", "Recovery ratio"))
+        fig.add_trace(go.Scatter(x=dfp["power_kw"], y=dfp["regen_MJ"], mode="lines+markers",
+                                 name="Regen MJ"), 1, 1)
+        fig.add_trace(go.Scatter(x=dfp["power_kw"], y=dfp["recovery_pct"], mode="lines+markers",
+                                 name="Recovery %", line=dict(color="#d62728")), 1, 2)
+        for x in (60, 120, 350):
+            fig.add_vline(x=x, line=dict(color="#adb5bd", dash="dot", width=1), row=1, col=1)
+            fig.add_vline(x=x, line=dict(color="#adb5bd", dash="dot", width=1), row=1, col=2)
+        fig.update_xaxes(title_text="MGU-K rating (kW)")
+        fig.update_yaxes(title_text="MJ", row=1, col=1)
+        fig.update_yaxes(title_text="%", row=1, col=2)
+        st.plotly_chart(style_fig(fig, 380).update_layout(showlegend=False))
+    else:
+        st.info("Click **Run power sweep** to see how recovery scales with machine rating.")
+
+# ---------------- Compare eras ----------------
+with tabs[7]:
+    st.write("Each regulation era on the selected circuit: ICE only, charge-sustaining race, and qualifying.")
+    if st.button("Run the era comparison"):
         st.session_state["eras_" + track_name] = run_eras(track_name)
     res = st.session_state.get("eras_" + track_name)
     if res:
@@ -397,15 +501,48 @@ with tabs[5]:
         fig = go.Figure(go.Bar(x=df["Scenario"], y=df["Lap time (s)"],
                                marker_color=["#adb5bd" if "ICE" in s else ("#d62728" if "2026" in s else
                                              ("#1f77b4" if "2014" in s else "#9467bd")) for s in df["Scenario"]]))
-        fig.update_layout(height=380, yaxis_title="Lap time (s)",
+        fig.update_layout(yaxis_title="Lap time (s)",
                           yaxis_range=[df["Lap time (s)"].min() - 2, df["Lap time (s)"].max() + 0.5])
-        st.plotly_chart(fig)
+        st.plotly_chart(style_fig(fig, 380))
+
+# ---------------- A/B compare ----------------
+with tabs[8]:
+    a, b = st.session_state.get("cmp_a"), st.session_state.get("cmp_b")
+    if not a or not b:
+        st.warning("Save two setups with the **Save as compare A/B** buttons above the KPI row.")
+    else:
+        st.write(f"**A:** {a['track_name']} · {a['strategy']} · {a['session']}  \n"
+                 f"**B:** {b['track_name']} · {b['strategy']} · {b['session']}")
+        keys = ["lap_time_s", "regen_MJ", "recovery_pct", "deploy_MJ", "harvest_MJ", "fuel_kg",
+                "sec_wh_per_tkm", "top_speed_kph"]
+        labels = ["Lap time (s)", "Regen (MJ)", "Recovery (%)", "Deploy (MJ)", "Harvest (MJ)",
+                  "Fuel (kg)", "SEC (Wh/t-km)", "Top speed (km/h)"]
+        table = pd.DataFrame({
+            "Metric": labels,
+            "A": [a["summary"][k] for k in keys],
+            "B": [b["summary"][k] for k in keys],
+            "B − A": [b["summary"][k] - a["summary"][k] for k in keys],
+        })
+        st.dataframe(table.style.format({"A": "{:.3f}", "B": "{:.3f}", "B − A": "{:+.3f}"}), hide_index=True)
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Speed", "SOC"),
+                            vertical_spacing=0.08)
+        fig.add_trace(go.Scatter(x=a["s_km"], y=a["v_kph"], name="A speed",
+                                 line=dict(color="#d62728", width=2)), 1, 1)
+        fig.add_trace(go.Scatter(x=b["s_km"], y=b["v_kph"], name="B speed",
+                                 line=dict(color="#1f77b4", width=2)), 1, 1)
+        fig.add_trace(go.Scatter(x=a["s_km"], y=a["soc_pct"], name="A SOC",
+                                 line=dict(color="#d62728", width=1.5, dash="dot")), 2, 1)
+        fig.add_trace(go.Scatter(x=b["s_km"], y=b["soc_pct"], name="B SOC",
+                                 line=dict(color="#1f77b4", width=1.5, dash="dot")), 2, 1)
+        fig.update_yaxes(title_text="km/h", row=1, col=1)
+        fig.update_yaxes(title_text="%", range=[-3, 103], row=2, col=1)
+        fig.update_xaxes(title_text="Distance (km)", row=2, col=1)
+        st.plotly_chart(style_fig(fig, 620))
 
 # ---------------- Stint ----------------
-with tabs[6]:
-    st.write("Consecutive laps with the current settings: the speed and state of charge at the line carry over "
-             "to the next lap. A strategy that spends more than it recovers runs the battery flat.")
-    rows = run_stint(track_name, veh_d, pu_d, asdict(lap.strategy), n_laps)
+with tabs[9]:
+    st.write("Consecutive laps with the current settings — SOC and speed carry over at the line.")
+    rows = run_stint(track_name, veh_d, pu_d, asdict(lap.strategy), int(n_laps))
     dfs = pd.DataFrame(rows)
     fig = make_subplots(rows=1, cols=2, subplot_titles=("Lap time", "SOC at the end of each lap"))
     fig.add_trace(go.Scatter(x=dfs["lap"], y=dfs["lap_time_s"], mode="lines+markers", name="Lap time"), 1, 1)
@@ -413,12 +550,11 @@ with tabs[6]:
                              line=dict(color="#2b8a3e")), 1, 2)
     fig.update_yaxes(title_text="s", row=1, col=1)
     fig.update_yaxes(title_text="%", range=[-3, 103], row=1, col=2)
-    fig.update_layout(height=380, showlegend=False)
-    st.plotly_chart(fig)
+    st.plotly_chart(style_fig(fig, 380).update_layout(showlegend=False))
     st.dataframe(dfs.style.format(precision=3), hide_index=True)
 
 # ---------------- Theory ----------------
-with tabs[7]:
+with tabs[10]:
     st.subheader("Model equations")
     st.latex(r"m\,v^2\kappa \le \mu_y\left(m g + \tfrac12\rho C_L A\, v^2\right) \quad\text{(cornering limit)}")
     st.latex(r"F_t = m_e\,a + \tfrac12\rho C_D A\, v^2 + C_{rr}\left(m g + \tfrac12\rho C_L A\, v^2\right)"
@@ -439,3 +575,11 @@ with tabs[7]:
         ("Specific energy consumption (Wh/t-km)", "Fuel + electrical energy per tonne-km"),
         ("Four-quadrant drive", "MGU-K motoring (Q I) and regenerating (Q II)"),
     ], columns=["Traction concept", "F1 equivalent"]))
+    st.subheader("60-second viva path")
+    st.markdown(
+        "1. Preset **Monza 2026 race** → Telemetry KPI row  \n"
+        "2. **Energy flow** Sankey → every joule accounted for  \n"
+        "3. **Strategy** → low-speed beats high-speed  \n"
+        "4. **Utilisation** → race kWh vs friction heat  \n"
+        "5. Preset **Quali** → receptivity (full store truncates early regen)"
+    )

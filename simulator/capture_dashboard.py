@@ -32,6 +32,8 @@ SHOTS = [  # (tab, file, viewport height in CSS px, crop to the tab panel)
     ("Energy flow", "fig_dashboard_energy.png", 1500, True),
     ("Track map", "fig_dashboard_map.png", 1500, True),
     ("Braking zones", "fig_dashboard_zones.png", 1500, True),
+    ("Strategy", "fig_dashboard_strategy.png", 1400, True),
+    ("Utilisation", "fig_dashboard_utilisation.png", 1400, True),
 ]
 
 PANEL_JS = """(() => {

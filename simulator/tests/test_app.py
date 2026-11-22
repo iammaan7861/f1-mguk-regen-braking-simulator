@@ -1,4 +1,4 @@
-"""Smoke test of the Streamlit dashboard: every main configuration renders without errors."""
+"""Smoke test of the Streamlit dashboard: main configurations and new analysis tabs."""
 from __future__ import annotations
 
 import unittest
@@ -28,10 +28,12 @@ class TestDashboard(unittest.TestCase):
         return {m.label: m.value for m in at.metric}
 
     def test_configurations(self):
-        """Dashboard renders without errors for every era, session, circuit and strategy."""
         at = AppTest.from_file(str(APP), default_timeout=300)
         base = self._run(at, "default")
         self.assertIn("Lap time", base)
+
+        # presets exist
+        self.assertTrue(any("Monza" in b.label for b in at.sidebar.button))
 
         at.sidebar.radio[0].set_value("quali")
         quali = self._run(at, "qualifying")
@@ -55,6 +57,14 @@ class TestDashboard(unittest.TestCase):
         _cbox(at, "Regenerative").set_value(False)
         no_regen = self._run(at, "regen off")
         self.assertEqual(no_regen["Recovered (braking)"], "0.00 MJ")
+
+        # A/B save buttons + strategy / utilisation study buttons should not crash
+        for label in ("Save as compare A", "Save as compare B", "Run strategy comparison",
+                      "Run power sweep on this circuit"):
+            btn = next((b for b in at.button if b.label == label), None)
+            self.assertIsNotNone(btn, label)
+            btn.click()
+            self._run(at, label)
 
 
 if __name__ == "__main__":
