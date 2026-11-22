@@ -211,7 +211,7 @@ with tabs[0]:
                              line=dict(color=C["friction"], width=1, dash="dot")), 2, 1)
     fig.add_trace(go.Scatter(x=x_km, y=lap.soc * 100, name="SOC", line=dict(color=C["soc"], width=1.5)), 3, 1)
     for _, _, s_c, _, _ in corner_groups(tr, 160.0):
-        fig.add_vline(x=s_c / 1000, line=dict(color="#e9ecef", width=1))
+        fig.add_vline(x=s_c / 1000, line=dict(color="#2d3548", width=1))
     fig.update_yaxes(title_text="km/h", row=1, col=1)
     fig.update_yaxes(title_text="kW (+ out / \u2212 in)", row=2, col=1)
     fig.update_yaxes(title_text="%", range=[-3, 103], row=3, col=1)
@@ -245,7 +245,7 @@ with tabs[1]:
     else:
         col, cs, title = None, None, None
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=tr.x, y=tr.y, mode="lines", line=dict(color="#dee2e6", width=12),
+    fig.add_trace(go.Scatter(x=tr.x, y=tr.y, mode="lines", line=dict(color="#2d3548", width=12),
                              hoverinfo="skip", showlegend=False))
     if col is not None:
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", showlegend=False,
@@ -326,7 +326,7 @@ with tabs[2]:
                   value=[v for _, _, v in links],
                   customdata=[f"{v:.2f} MJ" for _, _, v in links],
                   hovertemplate="%{source.label} \u2192 %{target.label}: %{customdata}<extra></extra>"),
-        textfont=dict(size=14, color="#212529")))
+        textfont=dict(size=14, color="#e8eaed")))
     st.plotly_chart(style_fig(fig, 600))
     bal = pd.DataFrame([
         ("Fuel chemical energy", f["fuel"]), ("ICE heat (exhaust, coolant)", f["ice_heat"]),

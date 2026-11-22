@@ -1,4 +1,4 @@
-"""Shared Streamlit / Plotly look for the F1 ERS dashboard."""
+"""Shared Streamlit / Plotly look for the F1 ERS dashboard (dark theme)."""
 from __future__ import annotations
 
 import json
@@ -13,29 +13,34 @@ CSS = """
 <style>
   .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px; }
   div[data-testid="stMetric"] {
-    background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px;
+    background: #1a1f2b; border: 1px solid #2d3548; border-radius: 8px;
     padding: 0.55rem 0.75rem;
   }
-  div[data-testid="stMetric"] label { font-size: 0.78rem !important; color: #495057 !important; }
-  div[data-testid="stMetricValue"] { font-size: 1.35rem !important; color: #212529 !important; }
+  div[data-testid="stMetric"] label { font-size: 0.78rem !important; color: #9aa0a6 !important; }
+  div[data-testid="stMetricValue"] { font-size: 1.35rem !important; color: #e8eaed !important; }
+  div[data-testid="stMetricDelta"] { color: #b0b3b8 !important; }
   .ers-banner {
-    background: linear-gradient(90deg, #1b3a6b 0%, #d62728 100%);
-    color: #fff; border-radius: 10px; padding: 0.85rem 1.1rem; margin-bottom: 0.85rem;
+    background: linear-gradient(105deg, #121826 0%, #1b3a6b 45%, #8b1e2d 100%);
+    border: 1px solid #2d3548; color: #fff; border-radius: 10px;
+    padding: 0.9rem 1.15rem; margin-bottom: 0.85rem;
   }
   .ers-banner h1 { color: #fff !important; font-size: 1.55rem; margin: 0 0 0.25rem 0; }
-  .ers-banner p { margin: 0; opacity: 0.92; font-size: 0.92rem; }
-  .ers-chip-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.4rem 0 0.6rem 0; }
+  .ers-banner p { margin: 0; opacity: 0.9; font-size: 0.92rem; color: #e8eaed !important; }
   div[data-testid="stTabs"] button[role="tab"] { font-weight: 600; }
   footer { visibility: hidden; }
+  [data-testid="stSidebar"] { background: #0b0e14; }
 </style>
 """
 
 PLOTLY_LAYOUT = dict(
-    template="plotly_white",
-    font=dict(family="Segoe UI, Helvetica, Arial, sans-serif", size=13, color="#212529"),
+    template="plotly_dark",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(14,17,23,0.35)",
+    font=dict(family="Segoe UI, Helvetica, Arial, sans-serif", size=13, color="#e8eaed"),
     margin=dict(t=48, b=40, l=50, r=30),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
     hovermode="x unified",
+    colorway=["#e63946", "#4cc9f0", "#2ec4b6", "#f4a261", "#9b5de5", "#adb5bd"],
 )
 
 
